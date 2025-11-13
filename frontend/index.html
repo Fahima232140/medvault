@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MedVault</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-root">
+    <div class="phone">
+
+      <!-- SPLASH -->
+      <section class="screen screen--active" id="screen-splash">
+        <div class="splash-bg">
+          <div class="splash-logo">
+            <div class="logo-icon">
+              <div class="logo-box"></div>
+            </div>
+            <div class="logo-text">MedVault</div>
+          </div>
+          <button class="btn btn-light splash-start" id="btnStart">
+            START
+          </button>
+        </div>
+      </section>
+
+      <!-- LOGIN -->
+      <section class="screen" id="screen-login">
+        <div class="screen-inner">
+          <div class="logo-top">
+            <div class="logo-icon small">
+              <div class="logo-box"></div>
+            </div>
+            <div class="logo-text brand">MedVault</div>
+          </div>
+
+          <form class="form" id="loginForm">
+            <div class="field">
+              <label>Email</label>
+              <input type="email" id="loginEmail" placeholder="dilyara@gmail.com" required />
+            </div>
+            <div class="field">
+              <label>Password</label>
+              <input type="password" id="loginPassword" placeholder="••••••••••" required />
+            </div>
+
+            <button type="button" class="link-text small" id="forgotPassword">
+              Forgot Password?
+            </button>
+
+            <button type="submit" class="btn btn-primary main-action">
+              SIGN IN
+            </button>
+          </form>
+
+          <div class="or-divider">
+            <span></span>
+            <p>or login with</p>
+            <span></span>
+          </div>
+
+          <div class="social-row">
+            <button class="social-btn">f</button>
+            <button class="social-btn">G</button>
+            <button class="social-btn"></button>
+          </div>
+
+          <p class="bottom-text">
+            Don’t have an account?
+            <button type="button" class="link-text" id="goToSignupFromLogin">
+              SIGN UP
+            </button>
+          </p>
+        </div>
+      </section>
+
+      <!-- SIGNUP -->
+      <section class="screen" id="screen-signup">
+        <div class="screen-inner">
+          <div class="top-row">
+            <button type="button" class="back-btn" id="btnBackToLogin">
+              ←
+            </button>
+            <h2 class="title-center">SIGN UP</h2>
+          </div>
+
+          <form class="form" id="signupForm">
+            <div class="field">
+              <label>Name</label>
+              <input type="text" id="signupName" placeholder="Dilyara Galymkyzy" required />
+            </div>
+
+            <div class="field">
+              <label>Email</label>
+              <input type="email" id="signupEmail" placeholder="dilyara@gmail.com" required />
+            </div>
+
+            <div class="field">
+              <label>Phone</label>
+              <input type="tel" id="signupPhone" placeholder="+7 7716774185" required />
+            </div>
+
+            <div class="field">
+              <label>IIN</label>
+              <input type="text" id="signupIIN" placeholder="000000000000" />
+            </div>
+
+            <div class="field">
+              <label>Password</label>
+              <input type="password" id="signupPassword" placeholder="••••••••••" required />
+            </div>
+
+            <div class="field">
+              <label>Confirm Password</label>
+              <input type="password" id="signupConfirmPassword" placeholder="••••••••••" required />
+            </div>
+
+            <button type="submit" class="btn btn-primary main-action">
+              SIGN UP
+            </button>
+          </form>
+
+          <p class="bottom-text">
+            Already have an account?
+            <button type="button" class="link-text" id="goToLoginFromSignup">
+              LOGIN
+            </button>
+          </p>
+        </div>
+      </section>
+
+      <!-- HOME -->
+      <section class="screen" id="screen-home">
+        <div class="screen-inner">
+          <header class="home-header">
+            <button class="menu-btn">☰</button>
+            <div class="home-title">
+              <p class="home-title-small">HOME</p>
+              <p class="home-subtitle">Choose a category</p>
+            </div>
+            <div class="avatar-circle"></div>
+          </header>
+
+          <div class="home-card-list">
+            <article class="home-card clickable" id="cardPatientList">
+              <div class="home-card-icon">👩‍⚕️</div>
+              <div class="home-card-text">
+                <h3>Patient List</h3>
+                <p>For doctors – verify blockchain-protected medical records.</p>
+              </div>
+            </article>
+
+            <article class="home-card clickable" id="cardMyRecords">
+              <div class="home-card-icon">🩸</div>
+              <div class="home-card-text">
+                <h3>My Records</h3>
+                <p>View and verify your encrypted medical records.</p>
+              </div>
+            </article>
+
+            <article class="home-card clickable" id="cardUploadRecords">
+              <div class="home-card-icon">⬆️</div>
+              <div class="home-card-text">
+                <h3>Upload Records</h3>
+                <p>Upload a new encrypted medical file to the system.</p>
+              </div>
+            </article>
+
+            <article class="home-card clickable" id="cardShareAccess">
+              <div class="home-card-icon">🔗</div>
+              <div class="home-card-text">
+                <h3>Share Access</h3>
+                <p>Request access using zero-knowledge proof.</p>
+              </div>
+            </article>
+
+            <article class="home-card clickable" id="cardSystemLog">
+              <div class="home-card-icon">🧾</div>
+              <div class="home-card-text">
+                <h3>System Log</h3>
+                <p>History of uploads, verifications and access checks.</p>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <nav class="bottom-nav">
+          <button class="bottom-nav-btn active" data-tab="home">🏠</button>
+          <button class="bottom-nav-btn" data-tab="records">🔍</button>
+          <button class="bottom-nav-btn" data-tab="notifications">🔔</button>
+          <button class="bottom-nav-btn" data-tab="profile">👤</button>
+        </nav>
+      </section>
+
+      <!-- UPLOAD RECORD PAGE -->
+      <section class="screen" id="screen-upload">
+        <div class="screen-inner upload-inner">
+          <header class="upload-header">
+            <h2>Upload Record Page</h2>
+            <div class="avatar-small"></div>
+          </header>
+
+          <section class="upload-card">
+            <h3>Upload New Health Record</h3>
+
+            <div class="upload-search-row">
+              <div class="upload-search">
+                <span>🔍</span>
+                <input type="text" id="uploadSearch" placeholder="Search record type..." />
+              </div>
+              <button class="btn upload-btn-small" id="btnUploadDummy">Upload</button>
+            </div>
+
+            <div class="upload-badges">
+              <span>Lab Report</span>
+              <span>Prescription</span>
+              <span>Diagnosis</span>
+            </div>
+
+            <div class="upload-info">
+              <p>File will be encrypted (AES-256) and hashed (SHA-256) before upload.</p>
+            </div>
+
+            <div class="field">
+              <label>Record Data / Notes</label>
+              <input type="text" id="recordInput" placeholder="Blood test results, diagnosis, etc." />
+            </div>
+
+            <div class="upload-actions">
+              <button class="btn btn-primary" id="btnEncryptUpload">
+                Encrypt &amp; Upload
+              </button>
+              <button class="btn btn-light" id="btnCancelUpload">
+                Cancel
+              </button>
+            </div>
+
+            <p class="upload-status" id="uploadStatusText"></p>
+          </section>
+        </div>
+
+        <nav class="bottom-nav">
+          <button class="bottom-nav-btn" data-tab="home">🏠</button>
+          <button class="bottom-nav-btn active" data-tab="records">🔍</button>
+          <button class="bottom-nav-btn" data-tab="notifications">🔔</button>
+          <button class="bottom-nav-btn" data-tab="profile">👤</button>
+        </nav>
+      </section>
+
+      <!-- RECORD VERIFICATION PAGE -->
+      <section class="screen" id="screen-verification">
+        <div class="screen-inner upload-inner">
+          <header class="upload-header">
+            <h2>Record Verification Page</h2>
+            <div class="avatar-small"></div>
+          </header>
+
+          <section class="upload-card">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Record Name</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="verificationTableBody"></tbody>
+            </table>
+          </section>
+        </div>
+
+        <nav class="bottom-nav">
+          <button class="bottom-nav-btn" data-tab="home">🏠</button>
+          <button class="bottom-nav-btn active" data-tab="records">🔍</button>
+          <button class="bottom-nav-btn" data-tab="notifications">🔔</button>
+          <button class="bottom-nav-btn" data-tab="profile">👤</button>
+        </nav>
+      </section>
+
+      <!-- RECORD ACCESS PAGE (ZKP) -->
+      <section class="screen" id="screen-access">
+        <div class="screen-inner upload-inner">
+          <header class="upload-header">
+            <h2>Record Access Page</h2>
+            <div class="avatar-small"></div>
+          </header>
+
+          <section class="upload-card">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Health Record</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="accessTableBody"></tbody>
+            </table>
+          </section>
+        </div>
+
+        <nav class="bottom-nav">
+          <button class="bottom-nav-btn" data-tab="home">🏠</button>
+          <button class="bottom-nav-btn active" data-tab="records">🔍</button>
+          <button class="bottom-nav-btn" data-tab="notifications">🔔</button>
+          <button class="bottom-nav-btn" data-tab="profile">👤</button>
+        </nav>
+      </section>
+
+      <!-- ACTIVITY LOG PAGE -->
+      <section class="screen" id="screen-activity">
+        <div class="screen-inner upload-inner">
+          <header class="upload-header">
+            <h2>Activity Log Page</h2>
+            <div class="avatar-small"></div>
+          </header>
+
+          <section class="upload-card">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>User ID</th>
+                  <th>Action</th>
+                  <th>Date</th>
+                  <th>Transaction ID</th>
+                </tr>
+              </thead>
+              <tbody id="activityTableBody"></tbody>
+            </table>
+          </section>
+        </div>
+
+        <nav class="bottom-nav">
+          <button class="bottom-nav-btn" data-tab="home">🏠</button>
+          <button class="bottom-nav-btn active" data-tab="records">🔍</button>
+          <button class="bottom-nav-btn" data-tab="notifications">🔔</button>
+          <button class="bottom-nav-btn" data-tab="profile">👤</button>
+        </nav>
+      </section>
+
+      <!-- NOTIFICATION PAGE -->
+      <section class="screen" id="screen-notifications">
+        <div class="screen-inner upload-inner">
+          <header class="upload-header">
+            <h2>Notification</h2>
+            <div class="avatar-small"></div>
+          </header>
+
+          <div class="home-card-list" id="notificationList"></div>
+        </div>
+
+        <nav class="bottom-nav">
+          <button class="bottom-nav-btn" data-tab="home">🏠</button>
+          <button class="bottom-nav-btn" data-tab="records">🔍</button>
+          <button class="bottom-nav-btn active" data-tab="notifications">🔔</button>
+          <button class="bottom-nav-btn" data-tab="profile">👤</button>
+        </nav>
+      </section>
+
+      <!-- PROFILE -->
+      <section class="screen" id="screen-profile">
+        <div class="screen-inner profile-inner">
+          <h2 class="profile-title">My Profile</h2>
+
+          <div class="profile-avatar-wrapper">
+            <div class="profile-avatar"></div>
+            <button class="avatar-edit-btn">📷</button>
+          </div>
+
+          <form class="form" id="profileForm">
+            <div class="field">
+              <label>Name</label>
+              <input type="text" id="profileName" required />
+            </div>
+            <div class="field">
+              <label>Email</label>
+              <input type="email" id="profileEmail" disabled />
+            </div>
+            <div class="field">
+              <label>Phone</label>
+              <input type="tel" id="profilePhone" required />
+            </div>
+            <div class="field">
+              <label>IIN</label>
+              <input type="text" id="profileIIN" />
+            </div>
+
+            <button type="submit" class="btn btn-primary main-action">
+              SAVE
+            </button>
+          </form>
+        </div>
+
+        <nav class="bottom-nav">
+          <button class="bottom-nav-btn" data-tab="home">🏠</button>
+          <button class="bottom-nav-btn" data-tab="records">🔍</button>
+          <button class="bottom-nav-btn" data-tab="notifications">🔔</button>
+          <button class="bottom-nav-btn active" data-tab="profile">👤</button>
+        </nav>
+      </section>
+
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
