@@ -1,35 +1,34 @@
-const Web3 = require("web3");
-const fs = require("fs");
-const path = require("path");
-require("dotenv").config();
+// backend/blockchain.js (ЧИСТАЯ ЗАГЛУШКА)
 
-const web3 = new Web3(process.env.RPC_URL);
-const account = web3.eth.accounts.wallet.add(process.env.CHAIN_PRIVATE_KEY);
+const { sha256Hex } = require("./cryptoService");
 
-const contractJsonPath = path.join(__dirname, "..", "contracts", "MedVaultRegistry.json");
-// Assume you compiled the contract and saved the ABI as MedVaultRegistry.json
-const contractJson = JSON.parse(fs.readFileSync(contractJsonPath, "utf8"));
-const contract = new web3.eth.Contract(contractJson.abi, process.env.CONTRACT_ADDRESS);
-
+/**
+ * Имитирует отправку хеша зашифрованной записи в блокчейн.
+ * @param {string} hashHex Хеш зашифрованных данных
+ * @returns {Promise<string>} Имитированный ID транзакции блокчейна
+ */
 async function storeRecordHashOnChain(hashHex) {
-  const hashBytes32 = "0x" + hashHex;
-  const tx = contract.methods.storeRecord(hashBytes32);
-  const gas = await tx.estimateGas({ from: account.address });
-  const receipt = await tx.send({ from: account.address, gas });
-  return receipt.transactionHash;
+    return new Promise(resolve => {
+        // Имитация асинхронной записи в блокчейн
+        setTimeout(() => {
+            // Генерируем уникальный хеш, который выглядит как TxID
+            const txId = sha256Hex(`TX-${Date.now()}-${hashHex}`).slice(0, 64);
+            console.log(`[Blockchain Stub] Stored hash ${hashHex.slice(0, 10)}... TxID: ${txId.slice(0, 10)}...`);
+            resolve(txId);
+        }, 50); 
+    });
 }
 
+// Функции approveDoctor и hasAccess также имитируем, чтобы не вызывать ошибку.
 async function approveDoctor(hashHex, doctorAddress) {
-  const hashBytes32 = "0x" + hashHex;
-  const tx = contract.methods.approveDoctor(hashBytes32, doctorAddress);
-  const gas = await tx.estimateGas({ from: account.address });
-  const receipt = await tx.send({ from: account.address, gas });
-  return receipt.transactionHash;
+    console.log(`[Blockchain Stub] Doctor approval imitated for hash ${hashHex.slice(0, 10)}...`);
+    return `MOCK_TX_${Date.now()}`;
 }
 
 async function hasAccess(hashHex, userAddress) {
-  const hashBytes32 = "0x" + hashHex;
-  return contract.methods.hasAccess(hashBytes32, userAddress).call();
+    // Для простоты имитации, всегда возвращаем true
+    return true; 
 }
+
 
 module.exports = { storeRecordHashOnChain, approveDoctor, hasAccess };

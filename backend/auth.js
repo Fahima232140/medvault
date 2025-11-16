@@ -1,73 +1,120 @@
+// backend/auth.js (Обновлено для MongoDB/Mongoose)
+
 const express = require("express");
-const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+const User = require("./models/User"); // <-- ИМПОРТ МОДЕЛИ USER
 const router = express.Router();
 require("dotenv").config();
 
-// In-memory user store for demo
-const users = new Map(); // email -> { email, passwordHash, role, zkpPublicKey }
+// Секретный ключ для JWT
+const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret";
 
-function createToken(user) {
-  return jwt.sign(
-    {
-      email: user.email,
-      role: user.role,
-      zkpPublicKey: user.zkpPublicKey || null,
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: "2h" }
-  );
-}
+/* -------- Middleware для проверки JWT -------- */
 
+// Middleware заменен на асинхронный поиск в БД
+const authMiddleware = async (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({ message: "Access token missing or invalid format" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        
+        // Находим пользователя в MongoDB
+        const user = await User.findOne({ email: decoded.email }); 
+        
+        if (!user) {
+            return res.status(401).json({ message: "User not found (token valid, but user missing)" });
+        }
+        
+        // Прикрепляем данные пользователя к объекту запроса
+        req.user = { email: user.email, role: user.role }; 
+        next();
+    } catch (error) {
+        return res.status(401).json({ message: "Invalid or expired token" });
+    }
+};
+
+/* -------- Роуты аутентификации -------- */
+
+// 1. Регистрация (Signup)
 router.post("/register", async (req, res) => {
-  const { email, password, role, zkpPublicKey } = req.body; // role: "patient" | "doctor"
+    const { name, email, phone, password, role, zkpPublicKey } = req.body;
 
-  if (!email || !password || !role) {
-    return res.status(400).json({ message: "email, password, role required" });
-  }
-  if (users.has(email)) {
-    return res.status(409).json({ message: "User exists" });
-  }
+    if (!email || !password) {
+        return res.status(400).json({ message: "Email and password required" });
+    }
 
-  const passwordHash = await bcrypt.hash(password, 10);
-  const user = { email, passwordHash, role, zkpPublicKey: zkpPublicKey || null };
-  users.set(email, user);
+    try {
+        // Проверка существования
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(409).json({ message: "User already exists" });
+        }
 
-  const token = createToken(user);
-  res.json({ token, user: { email, role, zkpPublicKey } });
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(password, salt);
+
+        const newUser = new User({
+            email,
+            passwordHash,
+            name,
+            phone,
+            role: role || "patient", // Используем роль из запроса (doctor/patient)
+            zkpPublicKey,
+        });
+
+        await newUser.save();
+
+        res.status(201).json({ message: "User registered successfully" });
+    } catch (error) {
+        console.error("Registration error:", error);
+        res.status(500).json({ message: "Server error during registration" });
+    }
 });
 
+// 2. Логин
 router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
-  const user = users.get(email);
-  if (!user) return res.status(401).json({ message: "Invalid credentials" });
+    const { email, password } = req.body;
 
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ message: "Invalid credentials" });
+    try {
+        // Находим пользователя в MongoDB
+        const user = await User.findOne({ email }); 
+        if (!user) {
+            return res.status(401).json({ message: "Invalid credentials" });
+        }
 
-  const token = createToken(user);
-  res.json({ token, user: { email: user.email, role: user.role, zkpPublicKey: user.zkpPublicKey } });
+        // Сравниваем хешированный пароль
+        const isMatch = await bcrypt.compare(password, user.passwordHash);
+        if (!isMatch) {
+            return res.status(401).json({ message: "Invalid credentials" });
+        }
+
+        // Генерация JWT
+        const token = jwt.sign({ email: user.email, role: user.role }, JWT_SECRET, {
+            expiresIn: "1h",
+        });
+
+        res.json({
+            message: "Login successful",
+            token,
+            user: {
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                phone: user.phone,
+                iin: user.iin,
+                zkpPublicKey: user.zkpPublicKey,
+            },
+        });
+    } catch (error) {
+        console.error("Login error:", error);
+        res.status(500).json({ message: "Server error during login" });
+    }
 });
 
-// Guest login – no password, limited role
-router.post("/guest", (req, res) => {
-  const email = `guest-${Date.now()}@medvault.local`;
-  const user = { email, role: "guest", passwordHash: null, zkpPublicKey: null };
-  users.set(email, user);
-  const token = createToken(user);
-  res.json({ token, user: { email, role: "guest" } });
-});
 
-function authMiddleware(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ message: "Missing token" });
-  const [, token] = auth.split(" ");
-  try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
-    next();
-  } catch (e) {
-    return res.status(401).json({ message: "Invalid token" });
-  }
-}
-
-module.exports = { router, authMiddleware, users };
+module.exports = { router, authMiddleware };

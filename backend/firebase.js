@@ -1,30 +1,36 @@
-const admin = require("firebase-admin");
-require("dotenv").config();
+// backend/firebase.js (Обновленная ЗАГЛУШКА)
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    }),
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  });
-}
+console.log("--- ⚠️ ИСПОЛЬЗУЕТСЯ ЗАГЛУШКА FIREBASE. Данные не сохраняются персистентно. ---");
 
-const bucket = admin.storage().bucket();
+// Временное хранилище в памяти для имитации Firebase
+const dummyStorage = new Map(); 
 
 async function uploadEncryptedRecord(recordId, encryptedData) {
-  const file = bucket.file(`records/${recordId}.enc`);
-  await file.save(encryptedData, {
-    contentType: "text/plain",
-  });
-  // Signed URL (limited-time access if you want)
-  const [url] = await file.getSignedUrl({
-    action: "read",
-    expires: Date.now() + 1000 * 60 * 60, // 1 hour
-  });
-  return url;
+    // ... (код загрузки)
+    return new Promise(resolve => {
+        setTimeout(() => {
+            dummyStorage.set(recordId, encryptedData); // <-- Сохраняем здесь
+            const storageUrl = `http://dummy.storage/records/${recordId}.enc`;
+            resolve(storageUrl);
+        }, 50); 
+    });
 }
 
-module.exports = { uploadEncryptedRecord };
+/**
+ * Имитирует загрузку зашифрованного файла из хранилища.
+ * @param {string} recordId
+ */
+async function downloadEncryptedRecord(recordId) {
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const encrypted = dummyStorage.get(recordId);
+            if (encrypted) {
+                resolve(encrypted); // Возвращаем зашифрованные данные
+            } else {
+                reject(new Error("File not found in dummy storage"));
+            }
+        }, 50);
+    });
+}
+
+module.exports = { uploadEncryptedRecord, downloadEncryptedRecord }; // <-- ЭКСПОРТ

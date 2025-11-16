@@ -1,0 +1,12 @@
+{
+"name": "medvault-frontend-web",
+"version": "1.0.0",
+"description": "Frontend for MedVault (HTML/CSS/JS) to test API integration.",
+"main": "app.js",
+"scripts": {
+"start": "http-server -c-1"
+},
+"dependencies": {
+"http-server": "^14.1.1"
+}
+}

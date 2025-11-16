@@ -1,592 +1,349 @@
-const BACKEND_URL = "http://localhost:3000";
+const BACKEND_URL = "http://127.0.0.1:4000"; // Используем 127.0.0.1 для лучшей совместимости CORS
+let userToken = localStorage.getItem('medvault_token');
+let user = JSON.parse(localStorage.getItem('medvault_user')) || null;
 
-const screens = {
-  splash: document.getElementById("screen-splash"),
-  login: document.getElementById("screen-login"),
-  signup: document.getElementById("screen-signup"),
-  home: document.getElementById("screen-home"),
-  upload: document.getElementById("screen-upload"),
-  verification: document.getElementById("screen-verification"),
-  access: document.getElementById("screen-access"),
-  activity: document.getElementById("screen-activity"),
-  notifications: document.getElementById("screen-notifications"),
-  profile: document.getElementById("screen-profile"),
-};
+// --- Helper Functions ---
 
-let currentUser = null;
-let recordsCache = [];
-let recordsLoaded = false;
-let activityLogCache = [];
-let notificationsCache = [];
-
-/* -------- Helpers -------- */
-
-function showScreen(name) {
-  Object.values(screens).forEach((el) => el.classList.remove("screen--active"));
-  if (screens[name]) screens[name].classList.add("screen--active");
-
-  if (name === "verification" || name === "access") {
-    ensureRecordsLoaded().then(() => {
-      if (name === "verification") renderVerificationTable();
-      if (name === "access") renderAccessTable();
+/**
+ * Переключает активный экран приложения.
+ * @param {string} screenId - ID экрана, который нужно показать (e.g., 'login', 'home').
+ */
+function showScreen(screenId) {
+    document.querySelectorAll('.screen').forEach(screen => {
+        screen.classList.remove('screen--active');
     });
-  } else if (name === "activity") {
-    renderActivityTable();
-  } else if (name === "notifications") {
-    renderNotifications();
-  }
-}
-
-const toastEl = document.getElementById("toast");
-function showToast(msg, isError = false) {
-  toastEl.textContent = msg;
-  toastEl.classList.toggle("error", isError);
-  toastEl.classList.add("show");
-  setTimeout(() => toastEl.classList.remove("show"), 2500);
-}
-
-function setCurrentUser(user) {
-  currentUser = user;
-  if (user) {
-    localStorage.setItem("medvaultUser", JSON.stringify(user));
-  } else {
-    localStorage.removeItem("medvaultUser");
-  }
-  fillProfileForm();
-}
-
-function fillProfileForm() {
-  if (!currentUser) return;
-  document.getElementById("profileName").value = currentUser.name || "";
-  document.getElementById("profileEmail").value = currentUser.email || "";
-  document.getElementById("profilePhone").value = currentUser.phone || "";
-  document.getElementById("profileIIN").value = currentUser.iin || "";
-}
-
-/* bottom nav */
-const bottomNavButtons = document.querySelectorAll(".bottom-nav-btn");
-function setActiveTab(tabName) {
-  bottomNavButtons.forEach((btn) =>
-    btn.dataset.tab === tabName
-      ? btn.classList.add("active")
-      : btn.classList.remove("active")
-  );
-}
-bottomNavButtons.forEach((btn) =>
-  btn.addEventListener("click", async () => {
-    const tab = btn.dataset.tab;
-    if (tab === "home") showScreen("home");
-    if (tab === "records") {
-      await ensureRecordsLoaded();
-      showScreen("verification");
-    }
-    if (tab === "notifications") showScreen("notifications");
-    if (tab === "profile") showScreen("profile");
-    setActiveTab(tab);
-  })
-);
-
-/* ------- navigation ------- */
-
-document.getElementById("btnStart").addEventListener("click", () => {
-  if (currentUser) {
-    showScreen("home");
-    setActiveTab("home");
-  } else {
-    showScreen("login");
-  }
-});
-document
-  .getElementById("goToSignupFromLogin")
-  .addEventListener("click", () => showScreen("signup"));
-document
-  .getElementById("goToLoginFromSignup")
-  .addEventListener("click", () => showScreen("login"));
-document
-  .getElementById("btnBackToLogin")
-  .addEventListener("click", () => showScreen("login"));
-
-/* home cards */
-
-document
-  .getElementById("cardPatientList")
-  .addEventListener("click", async () => {
-    await ensureRecordsLoaded();
-    showScreen("verification");
-    setActiveTab("records");
-  });
-
-document
-  .getElementById("cardMyRecords")
-  .addEventListener("click", async () => {
-    await ensureRecordsLoaded();
-    showScreen("verification");
-    setActiveTab("records");
-  });
-
-document
-  .getElementById("cardUploadRecords")
-  .addEventListener("click", () => {
-    showScreen("upload");
-    setActiveTab("records");
-  });
-
-document
-  .getElementById("cardShareAccess")
-  .addEventListener("click", async () => {
-    await ensureRecordsLoaded();
-    showScreen("access");
-    setActiveTab("records");
-  });
-
-document
-  .getElementById("cardSystemLog")
-  .addEventListener("click", () => {
-    showScreen("activity");
-    setActiveTab("records");
-  });
-
-/* ------- auth ------- */
-
-// login
-document.getElementById("loginForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const email = document.getElementById("loginEmail").value.trim();
-  const password = document.getElementById("loginPassword").value.trim();
-
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) return showToast(data.message || "Login failed", true);
-
-    setCurrentUser(data.user);
-    recordsLoaded = false;
-    showToast("Logged in");
-    showScreen("home");
-    setActiveTab("home");
-  } catch {
-    showToast("Network error", true);
-  }
-});
-
-// signup
-document.getElementById("signupForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const name = document.getElementById("signupName").value.trim();
-  const email = document.getElementById("signupEmail").value.trim();
-  const phone = document.getElementById("signupPhone").value.trim();
-  const iin = document.getElementById("signupIIN").value.trim();
-  const password = document.getElementById("signupPassword").value.trim();
-  const confirmPassword = document
-    .getElementById("signupConfirmPassword")
-    .value.trim();
-
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/signup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, phone, iin, password, confirmPassword }),
-    });
-    const data = await res.json();
-    if (!res.ok) return showToast(data.message || "Signup failed", true);
-
-    showToast("Signup successful, please login");
-    showScreen("login");
-  } catch {
-    showToast("Network error", true);
-  }
-});
-
-// profile
-document.getElementById("profileForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  if (!currentUser) return showToast("You must be logged in", true);
-
-  const name = document.getElementById("profileName").value.trim();
-  const phone = document.getElementById("profilePhone").value.trim();
-  const iin = document.getElementById("profileIIN").value.trim();
-
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/profile`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: currentUser.email, name, phone, iin }),
-    });
-    const data = await res.json();
-    if (!res.ok) return showToast(data.message || "Profile update failed", true);
-
-    setCurrentUser(data.user);
-    showToast("Profile updated");
-  } catch {
-    showToast("Network error", true);
-  }
-});
-
-/* ------- upload ------- */
-
-const recordInput = document.getElementById("recordInput");
-const uploadStatusText = document.getElementById("uploadStatusText");
-
-document
-  .getElementById("btnEncryptUpload")
-  .addEventListener("click", async () => {
-    if (!currentUser) return showToast("You must be logged in", true);
-    const data = recordInput.value.trim();
-    if (!data) return showToast("Enter record data", true);
-
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/records`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: currentUser.email, data }),
-      });
-      const json = await res.json();
-      if (!res.ok) return showToast(json.message || "Upload failed", true);
-
-      uploadStatusText.textContent =
-        "Record securely added! ID: " + json.recordId;
-      recordInput.value = "";
-      recordsLoaded = false;
-
-      activityLogCache.unshift({
-        userId: currentUser.email,
-        action: "Uploaded record",
-        date: new Date().toISOString(),
-        txId: json.blockchainTx || "-",
-      });
-      notificationsCache.unshift({
-        id: Date.now().toString(),
-        title: "Record uploaded",
-        body: `Encrypted record uploaded (ID ${json.recordId}).`,
-        time: "Just now",
-      });
-
-      showToast("Record encrypted & uploaded");
-    } catch {
-      showToast("Network error", true);
-    }
-  });
-
-document.getElementById("btnCancelUpload").addEventListener("click", () => {
-  recordInput.value = "";
-  uploadStatusText.textContent = "";
-});
-
-document.getElementById("btnUploadDummy").addEventListener("click", () => {
-  showToast("Use 'Encrypt & Upload' button.");
-});
-
-document
-  .getElementById("forgotPassword")
-  .addEventListener("click", () =>
-    showToast("Password reset not implemented", true)
-  );
-
-/* ------- records list ------- */
-
-async function ensureRecordsLoaded(force = false) {
-  if (!currentUser) return;
-  if (recordsLoaded && !force) return;
-
-  try {
-    const res = await fetch(
-      `${BACKEND_URL}/api/records?email=${encodeURIComponent(
-        currentUser.email
-      )}`
-    );
-    const data = await res.json();
-    if (!res.ok) return showToast(data.message || "Could not load records", true);
-
-    recordsCache = Array.isArray(data) ? data : [];
-    recordsLoaded = true;
-  } catch {
-    showToast("Network error loading records", true);
-  }
-}
-
-/* ------- verification page ------- */
-
-function renderVerificationTable() {
-  const tbody = document.getElementById("verificationTableBody");
-  tbody.innerHTML = "";
-
-  if (!recordsCache.length) {
-    tbody.innerHTML =
-      '<tr><td colspan="3">No records yet. Upload one first.</td></tr>';
-    return;
-  }
-
-  recordsCache.forEach((rec, index) => {
-    const status = rec.status || "Pending";
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${rec.name || `Record ${index + 1}`}</td>
-      <td><span class="status-pill ${
-        status.toLowerCase() === "verified" ? "status-ok" : "status-pending"
-      }">${status}</span></td>
-      <td>
-        <button class="action-btn btn-verify" data-id="${rec.recordId}">
-          Verify via Blockchain
-        </button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  tbody.querySelectorAll(".btn-verify").forEach((btn) =>
-    btn.addEventListener("click", () => verifyRecord(btn.dataset.id))
-  );
-}
-
-async function verifyRecord(recordId) {
-  try {
-    const res = await fetch(
-      `${BACKEND_URL}/api/records/${encodeURIComponent(recordId)}/verify`,
-      { method: "POST", headers: { "Content-Type": "application/json" } }
-    );
-    const data = await res.json();
-    if (!res.ok) return showToast(data.message || "Verification failed", true);
-
-    const rec = recordsCache.find((r) => r.recordId === recordId);
-    if (rec) {
-      rec.status = data.status || "Verified";
-      rec.blockchainTx = data.blockchainTx || rec.blockchainTx;
-    }
-
-    activityLogCache.unshift({
-      userId: currentUser.email,
-      action: "Verified record",
-      date: new Date().toISOString(),
-      txId: data.blockchainTx || "-",
-    });
-    notificationsCache.unshift({
-      id: Date.now().toString(),
-      title: "Record verified",
-      body: `Record ${recordId} verified on blockchain.`,
-      time: "Just now",
-    });
-
-    renderVerificationTable();
-    renderActivityTable();
-    renderNotifications();
-    showToast("Record verified on blockchain");
-  } catch {
-    showToast("Network error", true);
-  }
-}
-
-/* ------- access page (ZKP) ------- */
-
-function renderAccessTable() {
-  const tbody = document.getElementById("accessTableBody");
-  tbody.innerHTML = "";
-
-  if (!recordsCache.length) {
-    tbody.innerHTML =
-      '<tr><td colspan="2">No records available for access.</td></tr>';
-    return;
-  }
-
-  recordsCache.forEach((rec, i) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${rec.name || `Record ${i + 1}`}</td>
-      <td>
-        <button class="action-btn btn-request-access" data-id="${rec.recordId}">
-          Request Full Access
-        </button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  tbody.querySelectorAll(".btn-request-access").forEach((btn) =>
-    btn.addEventListener("click", () => requestAccessToRecord(btn.dataset.id))
-  );
-}
-
-/* ---- ZKP (Schnorr) client side ---- */
-
-const p = BigInt("0xfffffffffffffffffffffffffffffffeffffac73");
-const g = 5n;
-
-function modPow(base, exp, mod) {
-  let result = 1n;
-  base = base % mod;
-  while (exp > 0n) {
-    if (exp & 1n) result = (result * base) % mod;
-    exp >>= 1n;
-    base = (base * base) % mod;
-  }
-  return result;
-}
-
-async function hashToBigInt(message, rHex) {
-  const rBytes = Uint8Array.from(
-    rHex.match(/.{1,2}/g).map((b) => parseInt(b, 16))
-  );
-  const msgBytes = new TextEncoder().encode(message);
-  const concat = new Uint8Array(rBytes.length + msgBytes.length);
-  concat.set(rBytes);
-  concat.set(msgBytes, rBytes.length);
-  const buf = await crypto.subtle.digest("SHA-256", concat);
-  const hex = Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return BigInt("0x" + hex);
-}
-
-function generateDoctorKeys() {
-  const rand = crypto.getRandomValues(new Uint8Array(32));
-  const secretHex = Array.from(rand)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  const x = BigInt("0x" + secretHex);
-  const y = modPow(g, x, p);
-  return { secretHex: x.toString(16), publicHex: y.toString(16) };
-}
-
-async function createProof(secretHex, message) {
-  const rand = crypto.getRandomValues(new Uint8Array(32));
-  const kHex = Array.from(rand)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  const x = BigInt("0x" + secretHex);
-  const k = BigInt("0x" + kHex);
-  const r = modPow(g, k, p);
-  const rHex = r.toString(16);
-  const c = (await hashToBigInt(message, rHex)) % (p - 1n);
-  const s = (k + c * x) % (p - 1n);
-  return { r: r.toString(16), s: s.toString(16) };
-}
-
-async function getDoctorKeys() {
-  let secretHex = localStorage.getItem("zkpSecret");
-  let publicHex = localStorage.getItem("zkpPublic");
-  if (!secretHex || !publicHex) {
-    const keys = generateDoctorKeys();
-    secretHex = keys.secretHex;
-    publicHex = keys.publicHex;
-    localStorage.setItem("zkpSecret", secretHex);
-    localStorage.setItem("zkpPublic", publicHex);
-  }
-  return { secretHex, publicHex };
-}
-
-async function requestAccessToRecord(recordId) {
-  if (!currentUser) return showToast("You must be logged in", true);
-
-  const rec = recordsCache.find((r) => r.recordId === recordId);
-  if (!rec) return showToast("Record not found", true);
-
-  const { secretHex, publicHex } = await getDoctorKeys();
-  const proof = await createProof(secretHex, rec.hashHex);
-
-  try {
-    const res = await fetch(
-      `${BACKEND_URL}/api/records/${encodeURIComponent(
-        recordId
-      )}/access-request`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publicKeyHex: publicHex, proof }),
-      }
-    );
-    const data = await res.json();
-    if (!res.ok) return showToast(data.message || "Access denied", true);
-
-    activityLogCache.unshift({
-      userId: currentUser.email,
-      action: "Requested full access (ZKP)",
-      date: new Date().toISOString(),
-      txId: data.blockchainTx || "-",
-    });
-    notificationsCache.unshift({
-      id: Date.now().toString(),
-      title: "Access granted via ZKP",
-      body: `Decryption permitted for record ${recordId}.`,
-      time: "Just now",
-    });
-
-    renderActivityTable();
-    renderNotifications();
-
-    if (data.recordPlaintext) {
-      alert("Decrypted record data:\n\n" + data.recordPlaintext);
+    const targetScreen = document.getElementById(`screen-${screenId}`);
+    if (targetScreen) {
+        targetScreen.classList.add('screen--active');
+        if (screenId === 'home') {
+            updateHomeDisplay();
+        }
     } else {
-      showToast("Access granted (no plaintext returned).");
+        console.error("Screen not found:", screenId);
     }
-  } catch {
-    showToast("Network error", true);
-  }
 }
 
-/* ------- activity log ------- */
-
-function renderActivityTable() {
-  const tbody = document.getElementById("activityTableBody");
-  tbody.innerHTML = "";
-
-  if (!activityLogCache.length) {
-    tbody.innerHTML = '<tr><td colspan="4">No activity yet.</td></tr>';
-    return;
-  }
-
-  activityLogCache.forEach((log) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${log.userId}</td>
-      <td>${log.action}</td>
-      <td>${new Date(log.date).toLocaleString()}</td>
-      <td>${log.txId}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-/* ------- notifications ------- */
-
-function renderNotifications() {
-  const list = document.getElementById("notificationList");
-  list.innerHTML = "";
-
-  if (!notificationsCache.length) {
-    list.innerHTML =
-      '<p style="font-size:14px;color:#6b7280;">No notifications yet.</p>';
-    return;
-  }
-
-  notificationsCache.forEach((n) => {
-    const card = document.createElement("article");
-    card.className = "notification-card";
-    card.innerHTML = `
-      <div class="notification-title">${n.title}</div>
-      <div class="notification-body">${n.body}</div>
-      <div class="notification-time">${n.time}</div>
-    `;
-    list.appendChild(card);
-  });
-}
-
-/* ------- initial load ------- */
-
-(function init() {
-  const stored = localStorage.getItem("medvaultUser");
-  if (stored) {
-    try {
-      const user = JSON.parse(stored);
-      setCurrentUser(user);
-      showScreen("home");
-      setActiveTab("home");
-      return;
-    } catch {
-      localStorage.removeItem("medvaultUser");
+/**
+ * Показывает временное уведомление (Toast).
+ * @param {string} message - Сообщение.
+ * @param {boolean} isError - Флаг, указывающий, является ли это ошибкой.
+ */
+function showToast(message, isError = false) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = 'toast show';
+    if (isError) {
+        toast.classList.add('error');
+    } else {
+        toast.classList.remove('error');
     }
-  }
-  showScreen("splash");
-})();
+    setTimeout(() => {
+        toast.className = 'toast';
+    }, 3000);
+}
+
+/**
+ * Обновляет отображение на главном экране (роли и имя).
+ */
+function updateHomeDisplay() {
+    if (!user) return;
+    document.querySelector('.home-title-small').textContent = `Welcome, ${user.name || user.email}!`;
+    document.querySelector('.home-subtitle').textContent = `Role: ${user.role.toUpperCase()}`;
+    
+    // Скрываем/показываем карточки в зависимости от роли
+    const isDoctor = user.role === 'doctor';
+    document.getElementById('cardPatientList').style.display = isDoctor ? 'flex' : 'none';
+    document.getElementById('cardShareAccess').style.display = isDoctor ? 'flex' : 'none';
+    document.getElementById('cardMyRecords').style.display = isDoctor ? 'none' : 'flex';
+    document.getElementById('cardUploadRecords').style.display = isDoctor ? 'none' : 'flex';
+}
+
+/**
+ * Проверяет наличие токена и перенаправляет.
+ */
+function checkAuth() {
+    if (userToken && user) {
+        showScreen('home');
+    } else {
+        showScreen('splash');
+    }
+}
+
+// --- Crypto/ZKP STUBS (Имитация) ---
+
+/**
+ * Имитация генерации ZKP ключей.
+ * NOTE: В реальной жизни это должно происходить на стороне бэкенда или в защищенном модуле.
+ */
+async function generateZkpKeys() {
+    // В реальной жизни это была бы сложная криптографическая операция
+    const privateKey = 'zkp-secret-key-' + Date.now();
+    const publicKey = 'zkp-public-key-' + Math.random().toString(36).substring(7);
+    
+    // Имитируем сохранение приватного ключа локально (ОЧЕНЬ небезопасно для реального приложения!)
+    localStorage.setItem('zkp_private_key', privateKey);
+    
+    return { 
+        privateHex: privateKey, 
+        publicHex: publicKey 
+    };
+}
+
+/**
+ * Получение публичных ключей для доктора (для регистрации).
+ */
+async function getDoctorKeys() {
+    // Для регистрации доктора генерируем новые ключи.
+    // Если пользователь - пациент, ключи будут генерироваться позже, когда он захочет скрыть данные.
+    return generateZkpKeys(); 
+}
+
+/**
+ * Имитация создания ZKP (Proof of Knowledge).
+ * @param {string} message - Сообщение, для которого создается доказательство (например, хеш записи).
+ * @returns {object} - Доказательство и публичный ключ.
+ */
+async function createZkpProof(message) {
+    const privateKey = localStorage.getItem('zkp_private_key');
+    const publicKey = user.zkpPublicKey;
+
+    if (!privateKey || !publicKey) {
+        throw new Error("Missing ZKP keys for proof generation.");
+    }
+
+    // Имитация доказательства:
+    const proof = "proof-of-knowledge-for-" + message.substring(0, 10);
+    
+    return {
+        publicKeyHex: publicKey,
+        proof
+    };
+}
+
+
+// --- Event Listeners and Logic ---
+
+window.onload = () => {
+    checkAuth();
+
+    // 1. SPLASH
+    document.getElementById("btnStart").addEventListener("click", () => {
+        showScreen('login');
+    });
+    
+    // 2. Navigation
+    document.getElementById("goToSignupFromLogin").addEventListener("click", () => {
+        showScreen('signup');
+    });
+    document.getElementById("btnBackToLogin").addEventListener("click", () => {
+        showScreen('login');
+    });
+    document.getElementById("goToLoginFromSignup").addEventListener("click", () => {
+        showScreen('login');
+    });
+
+    // 3. SIGNUP Logic
+    document.getElementById("signupForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        
+        console.log("Attempting Signup... Collecting form data."); 
+
+        // Сбор данных формы
+        const name = document.getElementById("signupName").value.trim();
+        const email = document.getElementById("signupEmail").value.trim();
+        // В HTML добавлено IIN, мы должны его собрать
+        const iin = document.getElementById("signupIIN").value.trim(); 
+        const phone = document.getElementById("signupPhone").value.trim();
+        const password = document.getElementById("signupPassword").value;
+        const passwordConfirm = document.getElementById("signupPasswordConfirm").value; // ИСПРАВЛЕН ID
+
+        if (!name || !email || !password || !passwordConfirm) {
+            return showToast("Please fill all required fields", true);
+        }
+        if (password !== passwordConfirm) {
+            return showToast("Passwords do not match", true);
+        }
+        
+        try {
+            // Для простоты, все регистрируемые пользователи считаются "doctor" 
+            const { publicHex: zkpPublicKey } = await getDoctorKeys();
+            
+            console.log("ZKP Keys generated. Sending request to backend.");
+
+            const res = await fetch(`${BACKEND_URL}/api/auth/register`, { 
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    name, 
+                    email, 
+                    phone, 
+                    password, 
+                    role: "doctor", 
+                    zkpPublicKey,
+                    // IIN НЕ ОТПРАВЛЯЕМ, так как он не требуется в схеме бэкенда, но мы его собрали
+                }),
+            });
+
+            const data = await res.json();
+            
+            if (!res.ok) {
+                console.error("Signup failed:", data);
+                return showToast(data.message || "Signup failed (Server Error)", true);
+            }
+            
+            showToast("Registration successful! Please login.");
+            showScreen("login");
+
+        } catch (error) {
+            console.error("Fetch or ZKP error:", error);
+            // Если вы видите Network error, это может быть проблема с CORS или недоступностью 4000 порта
+            showToast("Network error or Server issue. Check the backend status.", true); 
+        }
+    });
+
+    // 4. LOGIN Logic
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const email = document.getElementById("loginEmail").value.trim();
+        const password = document.getElementById("loginPassword").value;
+
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                console.error("Login failed:", data);
+                return showToast(data.message || "Login failed (Invalid credentials)", true);
+            }
+
+            // Успешный вход
+            userToken = data.token;
+            user = data.user;
+            localStorage.setItem('medvault_token', userToken);
+            localStorage.setItem('medvault_user', JSON.stringify(user));
+            
+            showToast("Login successful!");
+            showScreen("home");
+
+        } catch (error) {
+            console.error("Login fetch error:", error);
+            showToast("Login failed due to a network or server issue.", true);
+        }
+    });
+
+    // 5. UPLOAD Logic (Simplified Stub)
+    document.getElementById("btnEncryptUpload").addEventListener("click", async () => {
+        const recordData = document.getElementById("recordInput").value.trim();
+        if (!recordData) {
+            return showToast("Please enter some record data to upload.", true);
+        }
+        
+        if (!userToken || !user) {
+            return showToast("Authentication required.", true);
+        }
+
+        try {
+            const statusText = document.getElementById('uploadStatusText');
+            statusText.textContent = "Status: Encrypting and generating hash...";
+            
+            // 1. Имитация ZKP: Мы должны использовать приватный ключ, связанный с этим пользователем.
+            // При регистрации мы сохранили zkpPublicKey в БД. 
+            // Здесь мы используем этот же ключ (в реальной системе это сложнее).
+
+            const res = await fetch(`${BACKEND_URL}/api/records`, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${userToken}` 
+                },
+                body: JSON.stringify({ 
+                    email: user.email, 
+                    data: recordData // Отправляем чистые данные для имитации шифрования на бэкенде
+                }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                console.error("Upload failed:", data);
+                statusText.textContent = `Status: Failed. ${data.message}`;
+                return showToast(data.message || "Upload failed.", true);
+            }
+            
+            statusText.textContent = `Status: Uploaded! Tx: ${data.blockchainTx}`;
+            showToast("Record uploaded and verified on Chain!");
+            
+        } catch (error) {
+            console.error("Upload process failed:", error);
+            showToast("Upload failed due to an error.", true);
+        }
+    });
+
+
+    // 6. ACCESS Logic (ZKP Proof Generation)
+    // В реальном приложении это будет вызываться при нажатии кнопки "Request Access"
+    window.requestAccess = async (recordId, ownerEmail) => {
+        if (!userToken || !user || user.role !== 'doctor') {
+            return showToast("Only doctors can request access.", true);
+        }
+
+        try {
+            showToast(`Generating ZKP for record ${recordId}...`);
+            
+            // 1. Имитация получения хеша записи (для доказательства)
+            // В боевой системе, doctor получит хеш от пациента или из метаданных. 
+            // Здесь мы просто генерируем доказательство.
+            const dummyHash = "dummy-record-hash-" + recordId; 
+
+            // 2. Генерация ZKP
+            const { publicKeyHex, proof } = await createZkpProof(dummyHash);
+            
+            // 3. Запрос доступа с доказательством
+            const res = await fetch(`${BACKEND_URL}/api/records/${recordId}/access-request`, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${userToken}` 
+                },
+                body: JSON.stringify({ 
+                    publicKeyHex, 
+                    proof 
+                }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                console.error("Access request failed:", data);
+                return showToast(data.message || "Access denied.", true);
+            }
+
+            showToast("Access granted! Record decrypted and verified.");
+            console.log("Decrypted Record Data:", data.recordPlaintext);
+            
+        } catch (error) {
+            console.error("Access process failed:", error);
+            showToast(error.message || "Access request failed.", true);
+        }
+    };
+    
+    // 7. Navigation Tabs
+    document.querySelectorAll('.bottom-nav-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const tab = button.getAttribute('data-tab');
+            if (tab === 'home') showScreen('home');
+            if (tab === 'records') showScreen('verification'); // Пример
+            if (tab === 'notifications') showScreen('notifications');
+            if (tab === 'profile') showScreen('profile');
+        });
+    });
+
+    // Инициализация отображения
+    showScreen('splash');
+};

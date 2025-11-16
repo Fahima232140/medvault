@@ -1,194 +1,232 @@
 const express = require("express");
-const cors = require("cors");
-const { v4: uuidv4 } = require("uuid");
-require("dotenv").config();
+const mongoose = require("mongoose");
+const cors = require("cors"); // <-- ИМПОРТ CORS
+const dotenv = require("dotenv");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
-const { encryptAES256, decryptAES256, sha256Hex } = require("./cryptoService");
-const { verifyProof } = require("./zkp");
+// Инициализация переменных окружения
+dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
+const DB_URI = process.env.DB_URI;
+const JWT_SECRET = process.env.JWT_SECRET || "your-very-secret-key";
 
-app.use(cors());
+// --- КОНФИГУРАЦИЯ CORS ---
+const corsOptions = {
+    // Разрешаем запросы с порта, на котором обычно запущен фронтенд (8080)
+    origin: 'http://127.0.0.1:8080', 
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+    optionsSuccessStatus: 204
+};
+app.use(cors(corsOptions)); // <-- ИСПОЛЬЗОВАНИЕ CORS
+
+// --- Middlewares ---
 app.use(express.json());
 
-// In-memory "database"
-const users = new Map();   // email -> { name, email, phone, iin, password }
-const records = new Map(); // recordId -> { ownerEmail, encrypted, hashHex, status, blockchainTx }
+// --- Database Connection ---
 
-/* ---------- BASIC ROUTES ---------- */
+mongoose.connect(DB_URI)
+    .then(() => console.log("MongoDB connected successfully."))
+    .catch(err => console.error("MongoDB connection error:", err));
+    
+// --- FIREBASE/CRYPTO STUBS (Заглушки) ---
+// Эти заглушки имитируют работу внешних сервисов
+const { uploadEncryptedRecord, downloadEncryptedRecord } = require("./firebase");
+const { 
+    encryptAES256, 
+    decryptAES256, 
+    sha256Hex, 
+    verifySchnorrProof 
+} = require("./cryptoService");
+const { storeRecordHashOnChain, verifyRecordHashOnChain } = require("./blockchain");
 
-app.get("/", (req, res) => {
-  res.send("MedVault backend is running");
-});
+// --- Models ---
+// --- Models ---
+const User = require('./models/User');
+const Record = require('./models/Record'); // <-- ИСПРАВЛЕНО
 
-/* ---------- AUTH (very simple for demo) ---------- */
+// --- Middleware для аутентификации ---
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
 
-app.post("/api/signup", (req, res) => {
-  const { name, email, phone, password, confirmPassword, iin } = req.body;
+    if (token == null) return res.sendStatus(401);
 
-  if (!name || !email || !phone || !password || !confirmPassword) {
-    return res.status(400).json({ message: "All fields are required" });
-  }
-  if (password !== confirmPassword) {
-    return res.status(400).json({ message: "Passwords do not match" });
-  }
-  if (users.has(email)) {
-    return res.status(409).json({ message: "User already exists" });
-  }
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.sendStatus(403);
+        req.user = user;
+        next();
+    });
+};
 
-  const user = { name, email, phone, iin: iin || "", password };
-  users.set(email, user);
+// --- ROUTES ---
 
-  res.status(201).json({ message: "Signup successful" });
-});
+// 1. Регистрация пользователя
+app.post('/api/auth/register', async (req, res) => {
+    const { email, password, name, role, zkpPublicKey } = req.body;
 
-app.post("/api/login", (req, res) => {
-  const { email, password } = req.body;
-  const user = users.get(email);
+    try {
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ message: "User already exists." });
+        }
 
-  if (!user || user.password !== password) {
-    return res.status(401).json({ message: "Invalid email or password" });
-  }
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(password, salt);
 
-  res.json({
-    message: "Login successful",
-    user: {
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      iin: user.iin,
-    },
-  });
-});
+        const newUser = new User({
+            email,
+            passwordHash,
+            name,
+            role: role || 'patient', // По умолчанию "patient"
+            zkpPublicKey,
+        });
 
-/* ---------- PROFILE ---------- */
+        await newUser.save();
+        
+        // Создание токена после успешной регистрации
+        const token = jwt.sign({ email: newUser.email, role: newUser.role }, JWT_SECRET, { expiresIn: '1h' });
 
-app.put("/api/profile", (req, res) => {
-  const { email, name, phone, iin } = req.body;
-  const user = users.get(email);
-  if (!user) {
-    return res.status(404).json({ message: "User not found" });
-  }
+        res.status(201).json({ 
+            message: "User registered successfully.", 
+            user: { email: newUser.email, name: newUser.name, role: newUser.role },
+            token
+        });
 
-  user.name = name;
-  user.phone = phone;
-  user.iin = iin || "";
-
-  res.json({
-    message: "Profile updated",
-    user: {
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      iin: user.iin,
-    },
-  });
-});
-
-/* ---------- RECORDS: UPLOAD / LIST / VERIFY / ACCESS (ZKP) ---------- */
-
-// Upload record: encrypt + hash
-app.post("/api/records", (req, res) => {
-  const { email, data } = req.body;
-  const user = users.get(email);
-  if (!user) {
-    return res.status(401).json({ message: "Invalid user" });
-  }
-  if (!data) {
-    return res.status(400).json({ message: "Record data is required" });
-  }
-
-  const encrypted = encryptAES256(data);
-  const hashHex = sha256Hex(encrypted);
-  const recordId = uuidv4();
-  const blockchainTx = sha256Hex(hashHex + Date.now().toString()); // fake tx id
-
-  records.set(recordId, {
-    ownerEmail: email,
-    encrypted,
-    hashHex,
-    status: "Pending",
-    blockchainTx,
-  });
-
-  res.status(201).json({
-    message: "Record encrypted & stored",
-    recordId,
-    hashHex,
-    blockchainTx,
-  });
-});
-
-// List records for a user (owner)
-app.get("/api/records", (req, res) => {
-  const email = req.query.email;
-  if (!email) {
-    return res.status(400).json({ message: "Email query param required" });
-  }
-
-  const list = [];
-  for (const [id, rec] of records.entries()) {
-    if (rec.ownerEmail === email) {
-      list.push({
-        recordId: id,
-        name: `Record ${id.slice(0, 8)}`,
-        status: rec.status,
-        hashHex: rec.hashHex,
-        blockchainTx: rec.blockchainTx,
-      });
+    } catch (error) {
+        console.error("Registration error:", error);
+        res.status(500).json({ message: "Server error during registration." });
     }
-  }
-  res.json(list);
 });
 
-// Verify record (e.g. patient or system verifying on blockchain)
-app.post("/api/records/:id/verify", (req, res) => {
-  const { id } = req.params;
-  const rec = records.get(id);
-  if (!rec) {
-    return res.status(404).json({ message: "Record not found" });
-  }
+// 2. Логин пользователя
+app.post('/api/auth/login', async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(400).json({ message: "Invalid credentials." });
+        }
 
-  rec.status = "Verified";
-  rec.blockchainTx = sha256Hex(rec.hashHex + Date.now().toString());
+        const isMatch = await bcrypt.compare(password, user.passwordHash);
+        if (!isMatch) {
+            return res.status(400).json({ message: "Invalid credentials." });
+        }
 
-  res.json({
-    message: "Record verified",
-    status: rec.status,
-    blockchainTx: rec.blockchainTx,
-  });
+        const token = jwt.sign({ email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '1h' });
+        
+        res.json({ 
+            message: "Login successful.", 
+            user: { email: user.email, name: user.name, role: user.role, zkpPublicKey: user.zkpPublicKey },
+            token
+        });
+
+    } catch (error) {
+        console.error("Login error:", error);
+        res.status(500).json({ message: "Server error during login." });
+    }
 });
 
-// Request access to record using Zero-Knowledge Proof
-app.post("/api/records/:id/access-request", (req, res) => {
-  const { id } = req.params;
-  const { publicKeyHex, proof } = req.body;
+// 3. Загрузка записи (Требует аутентификации)
+app.post('/api/records', authenticateToken, async (req, res) => {
+    const { email, data } = req.body;
+    
+    if (req.user.email !== email) {
+        return res.status(403).json({ message: "Forbidden: Cannot upload record for another user." });
+    }
 
-  const rec = records.get(id);
-  if (!rec) {
-    return res.status(404).json({ message: "Record not found" });
-  }
+    try {
+        // 1. Шифрование и хеширование
+        const encrypted = encryptAES256(data);
+        const hashHex = sha256Hex(encrypted);
+        const recordId = mongoose.Types.ObjectId().toString(); // Генерация ID
 
-  if (!publicKeyHex || !proof || !proof.r || !proof.s) {
-    return res.status(400).json({ message: "ZKP publicKeyHex and proof required" });
-  }
+        // 2. Имитация загрузки в Firebase
+        const storageUrl = await uploadEncryptedRecord(recordId, encrypted);
 
-  const ok = verifyProof(publicKeyHex, rec.hashHex, proof);
-  if (!ok) {
-    return res.status(401).json({ message: "Zero-knowledge proof verification failed" });
-  }
+        // 3. Имитация регистрации хеша в Блокчейне (для проверки целостности)
+        const blockchainTx = await storeRecordHashOnChain(hashHex);
 
-  const plaintext = decryptAES256(rec.encrypted);
-  const blockchainTx = sha256Hex(rec.hashHex + "ACCESS" + Date.now().toString());
+        // 4. Сохранение метаданных в MongoDB
+        const newRecord = new Record({
+            recordId,
+            ownerEmail: email,
+            hashHex,
+            storageUrl,
+            status: "Verified on Chain (Pending ZKP)",
+            blockchainTx,
+        });
+        await newRecord.save();
 
-  res.json({
-    message: "Access granted via ZKP",
-    blockchainTx,
-    recordPlaintext: plaintext,
-  });
+        res.status(201).json({ 
+            message: "Record uploaded and hash stored on chain.", 
+            recordId, 
+            blockchainTx 
+        });
+
+    } catch (error) {
+        console.error("Record upload error:", error);
+        res.status(500).json({ message: "Server error during record upload." });
+    }
 });
 
+
+// 4. Запрос доступа (ZKP Verification)
+app.post('/api/records/:recordId/access-request', authenticateToken, async (req, res) => {
+    const { recordId } = req.params;
+    const { publicKeyHex, proof } = req.body; // Получаем публичный ключ и доказательство
+    
+    // NOTE: В реальной системе нужно убедиться, что пользователь req.user.role === 'doctor'
+
+    try {
+        const record = await Record.findOne({ recordId });
+        if (!record) {
+            return res.status(404).json({ message: "Record not found." });
+        }
+
+        // 1. ПРОВЕРКА ZKP: Доказательство знания секретного ключа
+        const message = record.hashHex; // Сообщение для доказательства - хеш записи
+        const isProofValid = verifySchnorrProof(publicKeyHex, proof, message);
+
+        if (!isProofValid) {
+            return res.status(403).json({ message: "Access denied. Invalid Zero-Knowledge Proof." });
+        }
+
+        // 2. ПРОВЕРКА ЦЕЛОСТНОСТИ (опционально, но важно)
+        // Проверяем, что хеш записи в БД соответствует хешу, зарегистрированному в "блокчейне"
+        const isHashVerified = await verifyRecordHashOnChain(record.hashHex);
+
+        if (!isHashVerified) {
+            // Если хеш не совпадает, это означает, что запись была изменена!
+             return res.status(500).json({ message: "Integrity check failed. Record has been tampered." });
+        }
+        
+        // 3. Расшифровка записи (только после успешного ZKP и проверки целостности)
+        const encryptedData = await downloadEncryptedRecord(recordId); // Имитация загрузки из Firebase
+        const recordPlaintext = decryptAES256(encryptedData);
+        
+        // Обновляем статус записи в MongoDB
+        record.status = "Accessed via ZKP";
+        await record.save();
+
+        res.json({
+            message: "Access granted via ZKP and record is verified.",
+            recordPlaintext,
+            status: record.status
+        });
+
+    } catch (error) {
+        console.error("Access request error:", error);
+        res.status(500).json({ message: "Server error during access request." });
+    }
+});
+
+
+// 5. Запуск сервера
 app.listen(PORT, () => {
-  console.log(`MedVault backend listening on http://localhost:${PORT}`);
+    console.log(`MedVault backend listening on http://localhost:${PORT}`);
+    console.log("--- ⚠️ ИСПОЛЬЗУЕТСЯ ЗАГЛУШКА FIREBASE. Данные не сохраняются персистентно. ---");
 });
